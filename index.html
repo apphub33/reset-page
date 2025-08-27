@@ -20,45 +20,66 @@
   <p id="msg"></p>
 
   <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
-  <script>
-    // CHANGE THESE TWO LINES in Step A3:
-    const SUPABASE_URL = "https://kfytmcrkbgqrzuibruwf.supabase.co";
-    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtmeXRtY3JrYmdxcnp1aWJydXdmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYyMzA4NjMsImV4cCI6MjA3MTgwNjg2M30.xYV2PSqZCb0prBV8dDqc7UsrU2POpQu4EicLaW1UN5w";
+<script>
+  // 🔁 put your real values here
+  const SUPABASE_URL = "https://kfytmcrkbgqrzuibruwf.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtmeXRtY3JrYmdxcnp1aWJydXdmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYyMzA4NjMsImV4cCI6MjA3MTgwNjg2M30.xYV2PSqZCb0prBV8dDqc7UsrU2POpQu4EicLaW1UN5w";
 
-    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  // Use the default (implicit) flow – good for static sites
+  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: { flowType: 'implicit' }
+  });
 
-    async function ensureSessionFromUrl() {
-      const url = new URL(window.location.href);
-      const code = url.searchParams.get('code'); // one link style
-      const hash = new URLSearchParams(window.location.hash.slice(1)); // other link style
-      const isRecovery = hash.get('type') === 'recovery';
-      const accessToken = hash.get('access_token');
+  const form = document.getElementById('form');
+  const msg  = document.getElementById('msg');
 
-      if (code) {
-        const { error } = await supabase.auth.exchangeCodeForSession(code);
-        if (error) throw error;
-      } else if (isRecovery && accessToken) {
-        // already authenticated via token; no exchange needed
-      } else {
-        throw new Error('Invalid or expired link. Request a new reset email.');
-      }
+  async function ensureSession() {
+    const url  = new URL(window.location.href);
+    const hash = new URLSearchParams(window.location.hash.slice(1));
+    const tokenHash = url.searchParams.get('token_hash');
+    const type = url.searchParams.get('type');
+
+    // Case A: New (recommended) – verify via token_hash (no PKCE needed)
+    if (type === 'recovery' && tokenHash) {
+      const { data, error } = await supabase.auth.verifyOtp({
+        type: 'recovery',
+        token_hash: tokenHash
+      });
+      if (error) throw error;
+      return; // session is now set, show form
     }
 
-    (async () => {
-      try { await ensureSessionFromUrl(); }
-      catch (e) {
-        document.getElementById('msg').textContent = e.message;
-        document.getElementById('form').style.display = 'none';
-      }
-    })();
+    // Case B: Legacy implicit – access_token in hash (handled automatically)
+    const isRecovery = hash.get('type') === 'recovery';
+    const accessToken = hash.get('access_token');
+    if (isRecovery && accessToken) {
+      // supabase-js will pick tokens from hash automatically
+      return;
+    }
 
-    document.getElementById('form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const pw = document.getElementById('pw').value.trim();
-      const { error } = await supabase.auth.updateUser({ password: pw });
-      document.getElementById('msg').textContent = error ? error.message : 'Password updated — you can sign in now.';
-      if (!error) setTimeout(() => location.replace('/'), 800);
-    });
-  </script>
+    // If we got here, the link is invalid/expired or opened wrong
+    throw new Error('Invalid or expired reset link. Please request a new reset email.');
+  }
+
+  (async () => {
+    try {
+      await ensureSession();
+      form.style.display = 'grid'; // ensure form is visible when ready
+    } catch (e) {
+      msg.textContent = e.message;
+      form.style.display = 'none';
+    }
+  })();
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const pw = document.getElementById('pw').value.trim();
+    const { error } = await supabase.auth.updateUser({ password: pw });
+    msg.textContent = error ? error.message : 'Password updated — you can sign in now.';
+    if (!error) setTimeout(() => location.replace('/'), 800);
+  });
+</script>
+
 </body>
 </html>
+
