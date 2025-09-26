@@ -5,81 +5,164 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Reset Password</title>
   <style>
+    :root { color-scheme: light dark; }
     body { font-family: system-ui,-apple-system,Segoe UI,Roboto,Ubuntu; margin: 40px; }
     form { display: grid; gap: 12px; max-width: 360px; }
+    .input-wrap { position: relative; display: grid; }
     input, button { padding: 10px; font-size: 16px; }
-    #msg { margin-top: 10px; }
+    .toggle {
+      position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+      background: none; border: 0; cursor: pointer; font-size: 13px; opacity: 0.75;
+    }
+    .hint { font-size: 13px; opacity: 0.8; }
+    .error { color: #b00020; }
+    .ok { color: #0a7a0a; }
+    #msg { margin-top: 10px; min-height: 1.25em; }
+    button[disabled] { opacity: 0.6; cursor: not-allowed; }
   </style>
 </head>
 <body>
   <h1>Set a new password</h1>
-  <form id="form">
-    <input id="pw" type="password" placeholder="New password" required />
-    <button type="submit">Update password</button>
+
+  <form id="form" style="display:none">
+    <!-- New Password -->
+    <label class="input-wrap">
+      <input id="pw" type="password" placeholder="New password" required autocomplete="new-password" />
+      <button type="button" class="toggle" data-target="pw" aria-label="Show password">Show</button>
+    </label>
+
+    <!-- Confirm Password -->
+    <label class="input-wrap">
+      <input id="pw2" type="password" placeholder="Confirm new password" required autocomplete="new-password" />
+      <button type="button" class="toggle" data-target="pw2" aria-label="Show password">Show</button>
+    </label>
+
+    <div id="matchHint" class="hint"></div>
+
+    <button id="submitBtn" type="submit" disabled>Update password</button>
   </form>
+
   <p id="msg"></p>
 
   <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
-<script>
-  // 🔁 put your real values here
-  const SUPABASE_URL = "https://kfytmcrkbgqrzuibruwf.supabase.co";
-  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtmeXRtY3JrYmdxcnp1aWJydXdmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYyMzA4NjMsImV4cCI6MjA3MTgwNjg2M30.xYV2PSqZCb0prBV8dDqc7UsrU2POpQu4EicLaW1UN5w";
+  <script>
+    // 🔁 put your real values here
+    const SUPABASE_URL = "https://kfytmcrkbgqrzuibruwf.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtmeXRtY3JrYmdxcnp1aWJydXdmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYyMzA4NjMsImV4cCI6MjA3MTgwNjg2M30.xYV2PSqZCb0prBV8dDqc7UsrU2POpQu4EicLaW1UN5w";
 
-  // Use the default (implicit) flow – good for static sites
-  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: { flowType: 'implicit' }
-  });
+    // Use the default (implicit) flow – good for static sites
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { flowType: 'implicit' }
+    });
 
-  const form = document.getElementById('form');
-  const msg  = document.getElementById('msg');
+    const form = document.getElementById('form');
+    const msg  = document.getElementById('msg');
+    const pw1  = document.getElementById('pw');
+    const pw2  = document.getElementById('pw2');
+    const matchHint = document.getElementById('matchHint');
+    const submitBtn = document.getElementById('submitBtn');
 
-  async function ensureSession() {
-    const url  = new URL(window.location.href);
-    const hash = new URLSearchParams(window.location.hash.slice(1));
-    const tokenHash = url.searchParams.get('token_hash');
-    const type = url.searchParams.get('type');
-
-    // Case A: New (recommended) – verify via token_hash (no PKCE needed)
-    if (type === 'recovery' && tokenHash) {
-      const { data, error } = await supabase.auth.verifyOtp({
-        type: 'recovery',
-        token_hash: tokenHash
-      });
-      if (error) throw error;
-      return; // session is now set, show form
+    function setMatchState() {
+      const a = pw1.value.trim();
+      const b = pw2.value.trim();
+      if (!a && !b) {
+        matchHint.textContent = '';
+        submitBtn.disabled = true;
+        return;
+      }
+      if (a === b) {
+        matchHint.textContent = 'Passwords match.';
+        matchHint.className = 'hint ok';
+        submitBtn.disabled = a.length === 0;
+      } else {
+        matchHint.textContent = 'Passwords do not match.';
+        matchHint.className = 'hint error';
+        submitBtn.disabled = true;
+      }
     }
 
-    // Case B: Legacy implicit – access_token in hash (handled automatically)
-    const isRecovery = hash.get('type') === 'recovery';
-    const accessToken = hash.get('access_token');
-    if (isRecovery && accessToken) {
-      // supabase-js will pick tokens from hash automatically
-      return;
+    function toggleVisibility(inputEl, btnEl) {
+      const isPw = inputEl.type === 'password';
+      inputEl.type = isPw ? 'text' : 'password';
+      btnEl.textContent = isPw ? 'Hide' : 'Show';
+      btnEl.setAttribute('aria-label', isPw ? 'Hide password' : 'Show password');
     }
 
-    // If we got here, the link is invalid/expired or opened wrong
-    throw new Error('Invalid or expired reset link. Please request a new reset email.');
-  }
+    document.addEventListener('click', (e) => {
+      const t = e.target;
+      if (t.classList.contains('toggle')) {
+        const targetId = t.getAttribute('data-target');
+        const input = document.getElementById(targetId);
+        if (input) toggleVisibility(input, t);
+      }
+    });
 
-  (async () => {
-    try {
-      await ensureSession();
-      form.style.display = 'grid'; // ensure form is visible when ready
-    } catch (e) {
-      msg.textContent = e.message;
-      form.style.display = 'none';
+    pw1.addEventListener('input', setMatchState);
+    pw2.addEventListener('input', setMatchState);
+
+    async function ensureSession() {
+      const url  = new URL(window.location.href);
+      const hash = new URLSearchParams(window.location.hash.slice(1));
+      const tokenHash = url.searchParams.get('token_hash');
+      const type = url.searchParams.get('type');
+
+      // Case A: New (recommended) – verify via token_hash (no PKCE needed)
+      if (type === 'recovery' && tokenHash) {
+        const { error } = await supabase.auth.verifyOtp({
+          type: 'recovery',
+          token_hash: tokenHash
+        });
+        if (error) throw error;
+        return; // session is now set, show form
+      }
+
+      // Case B: Legacy implicit – access_token in hash (handled automatically)
+      const isRecovery = hash.get('type') === 'recovery';
+      const accessToken = hash.get('access_token');
+      if (isRecovery && accessToken) {
+        return; // supabase-js will pick tokens from hash automatically
+      }
+
+      // If we got here, the link is invalid/expired or opened wrong
+      throw new Error('Invalid or expired reset link. Please request a new reset email.');
     }
-  })();
 
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const pw = document.getElementById('pw').value.trim();
-    const { error } = await supabase.auth.updateUser({ password: pw });
-    msg.textContent = error ? error.message : 'Password updated — you can sign in now.';
-    if (!error) setTimeout(() => location.replace('/'), 800);
-  });
-</script>
+    (async () => {
+      try {
+        await ensureSession();
+        form.style.display = 'grid'; // ensure form is visible when ready
+        setMatchState(); // initialize button state
+      } catch (e) {
+        msg.textContent = e.message;
+        form.style.display = 'none';
+      }
+    })();
 
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const a = pw1.value.trim();
+      const b = pw2.value.trim();
+
+      if (a !== b) {
+        matchHint.textContent = 'Passwords do not match.';
+        matchHint.className = 'hint error';
+        return;
+      }
+
+      submitBtn.disabled = true;
+      msg.textContent = 'Updating password…';
+
+      const { error } = await supabase.auth.updateUser({ password: a });
+
+      if (error) {
+        msg.textContent = error.message;
+        submitBtn.disabled = false;
+        return;
+      }
+
+      msg.textContent = 'Password updated — you can sign in now.';
+      setTimeout(() => location.replace('/'), 800);
+    });
+  </script>
 </body>
 </html>
-
