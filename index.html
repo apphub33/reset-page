@@ -20,27 +20,34 @@
     #msg { margin-top: 10px; min-height: 1.25em; }
     [hidden] { display: none !important; }
     button[disabled] { opacity: 0.6; cursor: not-allowed; }
+    .muted { font-size: 13px; opacity: 0.8; }
   </style>
 </head>
 <body>
   <h1>Set a new password</h1>
 
+  <!-- MAIN RESET FORM (only shows if token/session ok) -->
   <form id="form" hidden>
-    <!-- New Password -->
     <label class="input-wrap">
       <input id="pw" type="password" placeholder="New password" required autocomplete="new-password" />
       <button type="button" class="toggle" data-target="pw" aria-label="Show password">Show</button>
     </label>
 
-    <!-- Confirm Password -->
     <label class="input-wrap">
       <input id="pw2" type="password" placeholder="Confirm new password" required autocomplete="new-password" />
       <button type="button" class="toggle" data-target="pw2" aria-label="Show password">Show</button>
     </label>
 
     <div id="matchHint" class="hint" aria-live="polite"></div>
-
     <button id="submitBtn" type="submit" disabled>Update password</button>
+  </form>
+
+  <!-- FALLBACK: RESEND RESET EMAIL (shows when link invalid/expired) -->
+  <form id="resend" hidden>
+    <p class="muted">Invalid or expired reset link. Request a new one:</p>
+    <input id="email" type="email" placeholder="Your email" required autocomplete="email" />
+    <button type="submit">Send reset email</button>
+    <p class="muted">We’ll send a new link that comes back to this page.</p>
   </form>
 
   <p id="msg" aria-live="polite"></p>
@@ -51,15 +58,17 @@
     const SUPABASE_URL = "https://kfytmcrkbgqrzuibruwf.supabase.co";
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtmeXRtY3JrYmdxcnp1aWJydXdmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYyMzA4NjMsImV4cCI6MjA3MTgwNjg2M30.xYV2PSqZCb0prBV8dDqc7UsrU2POpQu4EicLaW1UN5w";
 
-    // Where to send the user after a successful reset
-    const SIGN_IN_URL = "/"; // e.g. "/" or "https://yourapp.example.com/sign-in"
+    // Where to send the user after success
+    const SIGN_IN_URL = "/"; // e.g. "/" or full URL to your sign-in page
+    // Where Supabase should send users back during reset
+    const RESET_REDIRECT = "https://apphub33.github.io/reset-page/"; // must be whitelisted in Supabase
 
-    // Static-site friendly auth flow
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: { flowType: 'implicit' }
     });
 
     const form = document.getElementById('form');
+    const resend = document.getElementById('resend');
     const msg  = document.getElementById('msg');
     const pw1  = document.getElementById('pw');
     const pw2  = document.getElementById('pw2');
@@ -67,22 +76,10 @@
     const submitBtn = document.getElementById('submitBtn');
 
     function setMatchState() {
-      const a = pw1.value.trim();
-      const b = pw2.value.trim();
-      if (!a && !b) {
-        matchHint.textContent = '';
-        submitBtn.disabled = true;
-        return;
-      }
-      if (a === b) {
-        matchHint.textContent = 'Passwords match.';
-        matchHint.className = 'hint ok';
-        submitBtn.disabled = a.length === 0;
-      } else {
-        matchHint.textContent = 'Passwords do not match.';
-        matchHint.className = 'hint error';
-        submitBtn.disabled = true;
-      }
+      const a = pw1.value.trim(), b = pw2.value.trim();
+      if (!a && !b) { matchHint.textContent = ''; submitBtn.disabled = true; return; }
+      if (a === b) { matchHint.textContent = 'Passwords match.'; matchHint.className = 'hint ok'; submitBtn.disabled = a.length === 0; }
+      else { matchHint.textContent = 'Passwords do not match.'; matchHint.className = 'hint error'; submitBtn.disabled = true; }
     }
 
     function toggleVisibility(inputEl, btnEl) {
@@ -95,8 +92,7 @@
     document.addEventListener('click', (e) => {
       const t = e.target;
       if (t.classList.contains('toggle')) {
-        const targetId = t.getAttribute('data-target');
-        const input = document.getElementById(targetId);
+        const input = document.getElementById(t.getAttribute('data-target'));
         if (input) toggleVisibility(input, t);
       }
     });
@@ -104,79 +100,75 @@
     pw1.addEventListener('input', setMatchState);
     pw2.addEventListener('input', setMatchState);
 
-    // Show a nice message and hide the form
-    function showError(message) {
+    function showErrorAndResend(message) {
       form.hidden = true;
-      msg.textContent = message;
+      resend.hidden = false;
+      msg.textContent = message || '';
     }
 
     async function ensureSession() {
       const url  = new URL(window.location.href);
-      const search = url.searchParams;               // for token_hash based flow
-      const hash = new URLSearchParams(url.hash.slice(1)); // for legacy access_token flow
+      const search = url.searchParams;                      // token_hash flow
+      const hash   = new URLSearchParams(url.hash.slice(1)); // legacy hash flow
 
-      // If Supabase sent back an error in the hash (legacy style), surface it.
-      const errorDescription = hash.get('error_description');
-      if (errorDescription) throw new Error(decodeURIComponent(errorDescription));
+      // If Supabase returned an error via hash, surface it.
+      const errDesc = hash.get('error_description');
+      if (errDesc) throw new Error(decodeURIComponent(errDesc));
 
       const type = search.get('type');
       const tokenHash = search.get('token_hash');
 
-      // Case A: Newer flow — verify via token_hash for 'recovery'
+      // Newer flow: verify token_hash for 'recovery'
       if (type === 'recovery' && tokenHash) {
-        const { error } = await supabase.auth.verifyOtp({
-          type: 'recovery',
-          token_hash: tokenHash
-        });
+        const { error } = await supabase.auth.verifyOtp({ type: 'recovery', token_hash: tokenHash });
         if (error) throw error;
-        return; // session is now set
+        return; // session ready
       }
 
-      // Case B: Legacy implicit flow — access_token in hash (auto-handled by supabase-js)
-      const isRecovery = hash.get('type') === 'recovery';
-      const accessToken = hash.get('access_token');
-      if (isRecovery && accessToken) return;
+      // Legacy flow: access_token + type=recovery in hash (supabase-js picks it up)
+      if (hash.get('type') === 'recovery' && hash.get('access_token')) return;
 
-      // Otherwise invalid or expired link
+      // No valid tokens → invalid/expired or opened directly
       throw new Error('Invalid or expired reset link. Please request a new reset email.');
     }
 
     (async () => {
       try {
         await ensureSession();
-        form.hidden = false;          // show form only when session is valid
-        setMatchState();              // initialize button state
-        msg.textContent = '';         // clear any previous text
+        form.hidden = false;     // show main form
+        resend.hidden = true;
+        msg.textContent = '';
+        setMatchState();
       } catch (e) {
-        // Common messages include "Email link is invalid or has expired"
-        showError(e.message);
+        showErrorAndResend(e.message);
       }
     })();
 
+    // Submit new password
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const a = pw1.value.trim();
-      const b = pw2.value.trim();
-
-      if (a !== b) {
-        matchHint.textContent = 'Passwords do not match.';
-        matchHint.className = 'hint error';
-        return;
-      }
+      const a = pw1.value.trim(), b = pw2.value.trim();
+      if (a !== b) { matchHint.textContent = 'Passwords do not match.'; matchHint.className = 'hint error'; return; }
 
       submitBtn.disabled = true;
       msg.textContent = 'Updating password…';
 
       const { error } = await supabase.auth.updateUser({ password: a });
-
-      if (error) {
-        msg.textContent = error.message;
-        submitBtn.disabled = false;
-        return;
-      }
+      if (error) { msg.textContent = error.message; submitBtn.disabled = false; return; }
 
       msg.textContent = 'Password updated — returning to sign-in…';
       setTimeout(() => location.replace(SIGN_IN_URL), 900);
+    });
+
+    // Resend reset email
+    resend.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('email').value.trim();
+      if (!email) return;
+      msg.textContent = 'Sending reset email…';
+      const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: RESET_REDIRECT });
+      if (error) { msg.textContent = error.message; return; }
+      msg.textContent = 'Email sent. Check your inbox for the new link.';
     });
   </script>
 </body>
