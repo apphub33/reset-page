@@ -18,13 +18,14 @@
     .error { color: #b00020; }
     .ok { color: #0a7a0a; }
     #msg { margin-top: 10px; min-height: 1.25em; }
+    [hidden] { display: none !important; }
     button[disabled] { opacity: 0.6; cursor: not-allowed; }
   </style>
 </head>
 <body>
   <h1>Set a new password</h1>
 
-  <form id="form" style="display:none">
+  <form id="form" hidden>
     <!-- New Password -->
     <label class="input-wrap">
       <input id="pw" type="password" placeholder="New password" required autocomplete="new-password" />
@@ -37,20 +38,23 @@
       <button type="button" class="toggle" data-target="pw2" aria-label="Show password">Show</button>
     </label>
 
-    <div id="matchHint" class="hint"></div>
+    <div id="matchHint" class="hint" aria-live="polite"></div>
 
     <button id="submitBtn" type="submit" disabled>Update password</button>
   </form>
 
-  <p id="msg"></p>
+  <p id="msg" aria-live="polite"></p>
 
   <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
   <script>
-    // 🔁 put your real values here
+    // 🔁 Put your real values here
     const SUPABASE_URL = "https://kfytmcrkbgqrzuibruwf.supabase.co";
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtmeXRtY3JrYmdxcnp1aWJydXdmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYyMzA4NjMsImV4cCI6MjA3MTgwNjg2M30.xYV2PSqZCb0prBV8dDqc7UsrU2POpQu4EicLaW1UN5w";
 
-    // Use the default (implicit) flow – good for static sites
+    // Where to send the user after a successful reset
+    const SIGN_IN_URL = "/"; // e.g. "/" or "https://yourapp.example.com/sign-in"
+
+    // Static-site friendly auth flow
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: { flowType: 'implicit' }
     });
@@ -100,41 +104,52 @@
     pw1.addEventListener('input', setMatchState);
     pw2.addEventListener('input', setMatchState);
 
+    // Show a nice message and hide the form
+    function showError(message) {
+      form.hidden = true;
+      msg.textContent = message;
+    }
+
     async function ensureSession() {
       const url  = new URL(window.location.href);
-      const hash = new URLSearchParams(window.location.hash.slice(1));
-      const tokenHash = url.searchParams.get('token_hash');
-      const type = url.searchParams.get('type');
+      const search = url.searchParams;               // for token_hash based flow
+      const hash = new URLSearchParams(url.hash.slice(1)); // for legacy access_token flow
 
-      // Case A: New (recommended) – verify via token_hash (no PKCE needed)
+      // If Supabase sent back an error in the hash (legacy style), surface it.
+      const errorDescription = hash.get('error_description');
+      if (errorDescription) throw new Error(decodeURIComponent(errorDescription));
+
+      const type = search.get('type');
+      const tokenHash = search.get('token_hash');
+
+      // Case A: Newer flow — verify via token_hash for 'recovery'
       if (type === 'recovery' && tokenHash) {
         const { error } = await supabase.auth.verifyOtp({
           type: 'recovery',
           token_hash: tokenHash
         });
         if (error) throw error;
-        return; // session is now set, show form
+        return; // session is now set
       }
 
-      // Case B: Legacy implicit – access_token in hash (handled automatically)
+      // Case B: Legacy implicit flow — access_token in hash (auto-handled by supabase-js)
       const isRecovery = hash.get('type') === 'recovery';
       const accessToken = hash.get('access_token');
-      if (isRecovery && accessToken) {
-        return; // supabase-js will pick tokens from hash automatically
-      }
+      if (isRecovery && accessToken) return;
 
-      // If we got here, the link is invalid/expired or opened wrong
+      // Otherwise invalid or expired link
       throw new Error('Invalid or expired reset link. Please request a new reset email.');
     }
 
     (async () => {
       try {
         await ensureSession();
-        form.style.display = 'grid'; // ensure form is visible when ready
-        setMatchState(); // initialize button state
+        form.hidden = false;          // show form only when session is valid
+        setMatchState();              // initialize button state
+        msg.textContent = '';         // clear any previous text
       } catch (e) {
-        msg.textContent = e.message;
-        form.style.display = 'none';
+        // Common messages include "Email link is invalid or has expired"
+        showError(e.message);
       }
     })();
 
@@ -160,8 +175,8 @@
         return;
       }
 
-      msg.textContent = 'Password updated — you can sign in now.';
-      setTimeout(() => location.replace('/'), 800);
+      msg.textContent = 'Password updated — returning to sign-in…';
+      setTimeout(() => location.replace(SIGN_IN_URL), 900);
     });
   </script>
 </body>
