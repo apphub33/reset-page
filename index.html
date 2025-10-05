@@ -1,110 +1,153 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Reset password</title>
   <style>
-    body{font-family:system-ui,Arial,sans-serif;padding:24px}
-    input{width:100%;padding:12px;border-radius:10px;border:1px solid #ccc;margin:8px 0}
-    .row{display:flex;gap:10px;align-items:center}
-    .btn{width:100%;padding:14px;border-radius:12px;border:none;background:#9b95ff;color:#fff;font-weight:800}
-    .msg{color:#c00;margin:8px 0}
-    details{margin-top:16px}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial,sans-serif;margin:0;padding:24px;background:#fff7ff}
+    .card{max-width:560px;margin:0 auto;background:#fff;border-radius:16px;box-shadow:0 6px 24px rgba(0,0,0,.08);padding:24px}
+    h1{margin:0 0 16px 0;font-size:34px;letter-spacing:.2px}
+    .note{color:#c00;margin:0 0 16px 0}
+    .row{display:flex;gap:12px;align-items:center;margin:10px 0}
+    input[type=password],input[type=text]{flex:1;border:1px solid #ddd;border-radius:12px;padding:14px 12px;font-size:16px}
+    button{border:0;border-radius:12px;padding:14px 18px;font-size:16px}
+    .primary{background:#8f7bf2;color:#fff;width:100%}
+    .primary:disabled{opacity:.5}
+    .link{display:inline-block;margin-top:14px;text-decoration:none;background:#eee;color:#333;padding:10px 14px;border-radius:12px}
+    .eye{min-width:44px;height:44px;border-radius:12px;border:1px solid #ddd;background:#fafafa}
+    .hidden{display:none}
+    .ok{color:#2e7d32;margin-top:12px}
   </style>
   <script type="module">
-    import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+    import { createClient } from "https://esm.sh/@supabase/supabase-js@2.46.1";
 
-    // --- HARD-CODE YOUR WORKSPACE ---
+    // ---------------- Hard-coded workspace (yours) ----------------
     const SUPABASE_URL = "https://dlecrwuwsnvtykcyvkme.supabase.co";
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRsZWNyd3V3c252dHlrY3l2a21lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk2MDYxODQsImV4cCI6MjA3NTE4MjE4NH0.sZ-vk_F0-TsjF2Qr76W7drOzf0CQo5qBSHFSj_4BdUw";
+    const RETURN_DEEPLINK = "bizchat://setup";
+    // ---------------------------------------------------------------
 
-    const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-    const $ = (q)=>document.querySelector(q);
-    const msg = $(".msg");
-    const pw1 = $("#pw1");
-    const pw2 = $("#pw2");
-    const btn = $("#update");
-
-    function getParams() {
-      const h = new URLSearchParams(location.hash.replace(/^#/, ""));
-      const q = new URLSearchParams(location.search);
-      // Prefer hash tokens; otherwise query tokens; or PKCE code
-      return {
-        access_token: h.get("access_token") || q.get("access_token"),
-        refresh_token: h.get("refresh_token") || q.get("refresh_token"),
-        code: q.get("code"),
-      };
-    }
-
-    async function initRecovery() {
-      try {
-        const { access_token, refresh_token, code } = getParams();
-        if (code) {
-          const { error } = await sb.auth.exchangeCodeForSession(code);
-          if (error) throw error;
-          btn.disabled = false;
-          msg.textContent = "";
-          return;
-        }
-        if (access_token && refresh_token) {
-          const { error } = await sb.auth.setSession({ access_token, refresh_token });
-          if (error) throw error;
-          btn.disabled = false;
-          msg.textContent = "";
-          return;
-        }
-        btn.disabled = true;
-        msg.textContent = "Could not initialize recovery session. Open the link directly from the latest email.";
-      } catch (e) {
-        btn.disabled = true;
-        msg.textContent = (e && e.message) ? e.message : String(e);
-      }
-    }
-
-    btn.addEventListener("click", async () => {
-      msg.textContent = "";
-      if (pw1.value.length < 6) { msg.textContent = "Password must be at least 6 characters."; return; }
-      if (pw1.value !== pw2.value) { msg.textContent = "Passwords do not match."; return; }
-      btn.disabled = true;
-      try {
-        const { error } = await sb.auth.updateUser({ password: pw1.value });
-        if (error) throw error;
-        msg.style.color = "green";
-        msg.textContent = "Password updated. You can return to the app.";
-      } catch (e) {
-        msg.style.color = "#c00";
-        msg.textContent = (e && e.message) ? e.message : String(e);
-        btn.disabled = false;
-      }
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { persistSession: false }
     });
 
-    window.addEventListener("load", initRecovery);
+    const el = (id) => document.getElementById(id);
+
+    function toggleEye(which) {
+      const input = el(which);
+      input.type = input.type === "password" ? "text" : "password";
+    }
+
+    // Parse hash or query
+    function getParams() {
+      const hash = new URLSearchParams(location.hash.replace(/^#/, ""));
+      const query = new URLSearchParams(location.search);
+      return { hash, query };
+    }
+
+    async function init() {
+      const msg = el("msg");
+      const form = el("form");
+      form.classList.add("hidden");
+      msg.textContent = "";
+
+      const { hash, query } = getParams();
+
+      try {
+        let session = null;
+
+        // 1) Legacy hash style: #access_token & #refresh_token
+        const at = hash.get("access_token");
+        const rt = hash.get("refresh_token");
+        if (at && rt) {
+          const { data, error } = await supabase.auth.setSession({
+            access_token: at,
+            refresh_token: rt
+          });
+          if (error) throw error;
+          session = data.session;
+        }
+
+        // 2) New style: ?token_hash=...&type=recovery  (or older ?code=...)
+        if (!session) {
+          const tokenHash = query.get("token_hash") || query.get("code");
+          const type = query.get("type");
+          if (tokenHash && (type === "recovery" || !type)) {
+            const { data, error } = await supabase.auth.verifyOtp({
+              type: "recovery",
+              token_hash: tokenHash
+            });
+            if (error) throw error;
+            session = data.session;
+          }
+        }
+
+        if (!session) {
+          msg.textContent =
+            "Open the password-reset link directly from the email so this page receives the secure token.";
+          return;
+        }
+
+        // If we have a session, show the form
+        form.classList.remove("hidden");
+        el("p1").focus();
+      } catch (e) {
+        msg.textContent = e.message || String(e);
+      }
+    }
+
+    async function onUpdatePassword(ev) {
+      ev.preventDefault();
+      const msg = el("msg");
+      msg.textContent = "";
+      const p1 = el("p1").value.trim();
+      const p2 = el("p2").value.trim();
+      if (p1.length < 6) {
+        msg.textContent = "Password must be at least 6 characters.";
+        return;
+      }
+      if (p1 !== p2) {
+        msg.textContent = "Passwords do not match.";
+        return;
+      }
+      el("btn").disabled = true;
+      try {
+        const { error } = await supabase.auth.updateUser({ password: p1 });
+        if (error) throw error;
+        el("ok").classList.remove("hidden");
+        setTimeout(() => (window.location.href = RETURN_DEEPLINK), 800);
+      } catch (e) {
+        msg.textContent = e.message || String(e);
+      } finally {
+        el("btn").disabled = false;
+      }
+    }
+
+    window.addEventListener("DOMContentLoaded", init);
+    window.toggleEye = toggleEye;
+    window.onUpdatePassword = onUpdatePassword;
   </script>
 </head>
 <body>
-  <h1>Reset password</h1>
-  <div class="msg">Initializing…</div>
+  <div class="card">
+    <h1>Reset password</h1>
+    <p id="msg" class="note"></p>
 
-  <div class="row">
-    <input id="pw1" type="password" placeholder="New password" />
+    <form id="form" class="hidden" onsubmit="onUpdatePassword(event)">
+      <div class="row">
+        <input id="p1" type="password" placeholder="New password" autocomplete="new-password" />
+        <button type="button" class="eye" onclick="toggleEye('p1')">👁️</button>
+      </div>
+      <div class="row">
+        <input id="p2" type="password" placeholder="Confirm password" autocomplete="new-password" />
+        <button type="button" class="eye" onclick="toggleEye('p2')">👁️</button>
+      </div>
+      <button id="btn" class="primary" type="submit">Update password</button>
+      <div id="ok" class="ok hidden">Password updated. Returning to app…</div>
+    </form>
+
+    <a class="link" href="bizchat://setup">Return to App</a>
   </div>
-  <div class="row">
-    <input id="pw2" type="password" placeholder="Confirm password" />
-  </div>
-  <button id="update" class="btn" disabled>Update password</button>
-
-  <p style="margin-top:12px;">
-    <a class="btn" style="background:#666" href="bizchat://reset">Return to App</a>
-  </p>
-
-  <details>
-    <summary>Workspace (hard-coded)</summary>
-    <div><code id="url"></code></div>
-  </details>
-  <script>
-    document.getElementById('url').textContent = `${location.origin}\nURL=${"https://dlecrwuwsnvtykcyvkme.supabase.co"}`;
-  </script>
 </body>
 </html>
