@@ -22,61 +22,65 @@
   <script type="module">
     import { createClient } from "https://esm.sh/@supabase/supabase-js@2.46.1";
 
-    // ---------------- Hard-coded workspace (yours) ----------------
-    const SUPABASE_URL = "https://dlecrwuwsnvtykcyvkme.supabase.co";
-    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRsZWNyd3V3c252dHlrY3l2a21lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk2MDYxODQsImV4cCI6MjA3NTE4MjE4NH0.sZ-vk_F0-TsjF2Qr76W7drOzf0CQo5qBSHFSj_4BdUw";
+    // ----- your workspace (hard-coded) -----
+    const SUPABASE_URL =
+      "https://dlecrwuwsnvtykcyvkme.supabase.co";
+    const SUPABASE_ANON_KEY =
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRsZWNyd3V3c252dHlrY3l2a21lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk2MDYxODQsImV4cCI6MjA3NTE4MjE4NH0.sZ-vk_F0-TsjF2Qr76W7drOzf0CQo5qBSHFSj_4BdUw";
     const RETURN_DEEPLINK = "bizchat://setup";
-    // ---------------------------------------------------------------
+    // ---------------------------------------
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      auth: { persistSession: false }
+      auth: { persistSession: false },
     });
 
-    const el = (id) => document.getElementById(id);
+    const $ = (id) => document.getElementById(id);
+    const show = (el, yes) => el.classList[yes ? "remove" : "add"]("hidden");
 
-    function toggleEye(which) {
-      const input = el(which);
-      input.type = input.type === "password" ? "text" : "password";
-    }
+    window.toggleEye = (id) => {
+      const i = $(id);
+      i.type = i.type === "password" ? "text" : "password";
+    };
 
-    // Parse hash or query
-    function getParams() {
+    function parseParams() {
       const hash = new URLSearchParams(location.hash.replace(/^#/, ""));
       const query = new URLSearchParams(location.search);
       return { hash, query };
     }
 
     async function init() {
-      const msg = el("msg");
-      const form = el("form");
-      form.classList.add("hidden");
+      const msg = $("msg");
+      const form = $("form");
+      show(form, false); // hide by default
       msg.textContent = "";
 
-      const { hash, query } = getParams();
+      const { hash, query } = parseParams();
 
       try {
         let session = null;
 
-        // 1) Legacy hash style: #access_token & #refresh_token
+        // A) Hash style (magic link with tokens in the URL fragment)
         const at = hash.get("access_token");
         const rt = hash.get("refresh_token");
         if (at && rt) {
           const { data, error } = await supabase.auth.setSession({
             access_token: at,
-            refresh_token: rt
+            refresh_token: rt,
           });
           if (error) throw error;
           session = data.session;
         }
 
-        // 2) New style: ?token_hash=...&type=recovery  (or older ?code=...)
+        // B) Query style (email link with ?token_hash=... or ?code=... or ?token=...)
         if (!session) {
-          const tokenHash = query.get("token_hash") || query.get("code");
-          const type = query.get("type");
-          if (tokenHash && (type === "recovery" || !type)) {
+          const tokenHash =
+            query.get("token_hash") || query.get("code") || query.get("token");
+          const type = (query.get("type") || "recovery").toLowerCase();
+
+          if (tokenHash && type === "recovery") {
             const { data, error } = await supabase.auth.verifyOtp({
               type: "recovery",
-              token_hash: tokenHash
+              token_hash: tokenHash, // Supabase expects token_hash for email links
             });
             if (error) throw error;
             session = data.session;
@@ -85,48 +89,41 @@
 
         if (!session) {
           msg.textContent =
-            "Open the password-reset link directly from the email so this page receives the secure token.";
+            "Invalid or expired reset link. Request a new reset email and open it once, directly in the browser.";
           return;
         }
 
-        // If we have a session, show the form
-        form.classList.remove("hidden");
-        el("p1").focus();
+        show(form, true);
+        $("p1").focus();
       } catch (e) {
         msg.textContent = e.message || String(e);
       }
     }
 
-    async function onUpdatePassword(ev) {
+    window.onUpdatePassword = async (ev) => {
       ev.preventDefault();
-      const msg = el("msg");
+      const msg = $("msg");
       msg.textContent = "";
-      const p1 = el("p1").value.trim();
-      const p2 = el("p2").value.trim();
-      if (p1.length < 6) {
-        msg.textContent = "Password must be at least 6 characters.";
-        return;
-      }
-      if (p1 !== p2) {
-        msg.textContent = "Passwords do not match.";
-        return;
-      }
-      el("btn").disabled = true;
+      const p1 = $("p1").value.trim();
+      const p2 = $("p2").value.trim();
+
+      if (p1.length < 6) return (msg.textContent = "Min 6 characters.");
+      if (p1 !== p2) return (msg.textContent = "Passwords do not match.");
+
+      $("btn").disabled = true;
       try {
         const { error } = await supabase.auth.updateUser({ password: p1 });
         if (error) throw error;
-        el("ok").classList.remove("hidden");
-        setTimeout(() => (window.location.href = RETURN_DEEPLINK), 800);
+        $("ok").classList.remove("hidden");
+        setTimeout(() => (window.location.href = RETURN_DEEPLINK), 900);
       } catch (e) {
         msg.textContent = e.message || String(e);
       } finally {
-        el("btn").disabled = false;
+        $("btn").disabled = false;
       }
-    }
+    };
 
     window.addEventListener("DOMContentLoaded", init);
-    window.toggleEye = toggleEye;
-    window.onUpdatePassword = onUpdatePassword;
   </script>
 </head>
 <body>
@@ -137,11 +134,11 @@
     <form id="form" class="hidden" onsubmit="onUpdatePassword(event)">
       <div class="row">
         <input id="p1" type="password" placeholder="New password" autocomplete="new-password" />
-        <button type="button" class="eye" onclick="toggleEye('p1')">👁️</button>
+        <button class="eye" type="button" onclick="toggleEye('p1')">👁️</button>
       </div>
       <div class="row">
         <input id="p2" type="password" placeholder="Confirm password" autocomplete="new-password" />
-        <button type="button" class="eye" onclick="toggleEye('p2')">👁️</button>
+        <button class="eye" type="button" onclick="toggleEye('p2')">👁️</button>
       </div>
       <button id="btn" class="primary" type="submit">Update password</button>
       <div id="ok" class="ok hidden">Password updated. Returning to app…</div>
