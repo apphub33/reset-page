@@ -1,0 +1,110 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Reset password</title>
+  <style>
+    body{font-family:system-ui,Arial,sans-serif;padding:24px}
+    input{width:100%;padding:12px;border-radius:10px;border:1px solid #ccc;margin:8px 0}
+    .row{display:flex;gap:10px;align-items:center}
+    .btn{width:100%;padding:14px;border-radius:12px;border:none;background:#9b95ff;color:#fff;font-weight:800}
+    .msg{color:#c00;margin:8px 0}
+    details{margin-top:16px}
+  </style>
+  <script type="module">
+    import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+
+    // --- HARD-CODE YOUR WORKSPACE ---
+    const SUPABASE_URL = "https://dlecrwuwsnvtykcyvkme.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRsZWNyd3V3c252dHlrY3l2a21lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk2MDYxODQsImV4cCI6MjA3NTE4MjE4NH0.sZ-vk_F0-TsjF2Qr76W7drOzf0CQo5qBSHFSj_4BdUw";
+
+    const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const $ = (q)=>document.querySelector(q);
+    const msg = $(".msg");
+    const pw1 = $("#pw1");
+    const pw2 = $("#pw2");
+    const btn = $("#update");
+
+    function getParams() {
+      const h = new URLSearchParams(location.hash.replace(/^#/, ""));
+      const q = new URLSearchParams(location.search);
+      // Prefer hash tokens; otherwise query tokens; or PKCE code
+      return {
+        access_token: h.get("access_token") || q.get("access_token"),
+        refresh_token: h.get("refresh_token") || q.get("refresh_token"),
+        code: q.get("code"),
+      };
+    }
+
+    async function initRecovery() {
+      try {
+        const { access_token, refresh_token, code } = getParams();
+        if (code) {
+          const { error } = await sb.auth.exchangeCodeForSession(code);
+          if (error) throw error;
+          btn.disabled = false;
+          msg.textContent = "";
+          return;
+        }
+        if (access_token && refresh_token) {
+          const { error } = await sb.auth.setSession({ access_token, refresh_token });
+          if (error) throw error;
+          btn.disabled = false;
+          msg.textContent = "";
+          return;
+        }
+        btn.disabled = true;
+        msg.textContent = "Could not initialize recovery session. Open the link directly from the latest email.";
+      } catch (e) {
+        btn.disabled = true;
+        msg.textContent = (e && e.message) ? e.message : String(e);
+      }
+    }
+
+    btn.addEventListener("click", async () => {
+      msg.textContent = "";
+      if (pw1.value.length < 6) { msg.textContent = "Password must be at least 6 characters."; return; }
+      if (pw1.value !== pw2.value) { msg.textContent = "Passwords do not match."; return; }
+      btn.disabled = true;
+      try {
+        const { error } = await sb.auth.updateUser({ password: pw1.value });
+        if (error) throw error;
+        msg.style.color = "green";
+        msg.textContent = "Password updated. You can return to the app.";
+      } catch (e) {
+        msg.style.color = "#c00";
+        msg.textContent = (e && e.message) ? e.message : String(e);
+        btn.disabled = false;
+      }
+    });
+
+    window.addEventListener("load", initRecovery);
+  </script>
+</head>
+<body>
+  <h1>Reset password</h1>
+  <div class="msg">Initializing…</div>
+
+  <div class="row">
+    <input id="pw1" type="password" placeholder="New password" />
+  </div>
+  <div class="row">
+    <input id="pw2" type="password" placeholder="Confirm password" />
+  </div>
+  <button id="update" class="btn" disabled>Update password</button>
+
+  <p style="margin-top:12px;">
+    <a class="btn" style="background:#666" href="bizchat://reset">Return to App</a>
+  </p>
+
+  <details>
+    <summary>Workspace (hard-coded)</summary>
+    <div><code id="url"></code></div>
+  </details>
+  <script>
+    document.getElementById('url').textContent = `${location.origin}\nURL=${"https://dlecrwuwsnvtykcyvkme.supabase.co"}`;
+  </script>
+</body>
+</html>
