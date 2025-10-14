@@ -46,10 +46,9 @@
   </div>
 
   <script>
-    // >>> MUST match the Supabase project that sent the email
+    // MUST match the Supabase project that sent the email
     const SUPABASE_URL = 'https://cfxekbvsdvqviyfvpqzo.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNmeGVrYnZzZHZxdml5ZnZwcXpvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAzMDQ3ODgsImV4cCI6MjA3NTg4MDc4OH0.7cyrfmSAwFVJJL4AigVhu58xolHUtrWyWGKLa07hPz4';
-    // <<<
 
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     const debugEl = document.getElementById('debug');
@@ -78,17 +77,13 @@
       const h = parseHash();
       const q = parseQuery();
 
-      // 1) PKCE-style authorization code (this is what your link shows)
-      const code = q.code || h.code;
-      if (code) {
-        log('Found code param. Exchanging for a session…');
-        // IMPORTANT: pass a STRING, not an object
-        const { error } = await supabase.auth.exchangeCodeForSession(code);
-        if (error) throw error;
-        return true;
+      // Ignore ?code= on static hosting (needs server code_verifier).
+      if (q.code || h.code) {
+        // Show a hint if someone visits with ?code= by mistake.
+        log('Auth code detected (server PKCE). Using token_hash / implicit instead.');
       }
 
-      // 2) Implicit flow (hash tokens)
+      // Implicit flow (hash tokens)
       if (h.access_token && h.refresh_token) {
         log('Found access_token in URL hash (implicit). Exchanging…');
         const { error } = await supabase.auth.setSession({
@@ -99,7 +94,7 @@
         return true;
       }
 
-      // 3) Token-hash (client-side PKCE-style)
+      // Token-hash (client PKCE)
       const tokenHash = q.token_hash || h.token_hash;
       const rawType = (q.type || h.type || '').toLowerCase();
       const allowed = ['recovery','email','magiclink','signup','invite','email_change'];
@@ -109,7 +104,7 @@
         const { error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash });
         if (error) throw error;
 
-        // Ensure we actually have a session now
+        // Ensure session exists
         const { data: s } = await supabase.auth.getSession();
         if (!s || !s.session) throw new Error('No session after verifyOtp');
         return true;
@@ -152,7 +147,6 @@
       if (p1.length < 6) { msg.textContent = 'Minimum 6 characters'; msg.hidden = false; return; }
 
       try {
-        // Safety: ensure session still exists
         const { data: s1 } = await supabase.auth.getSession();
         if (!s1 || !s1.session) throw new Error('No active session to update password');
 
@@ -160,8 +154,6 @@
         if (error) throw error;
 
         okEl.hidden = false;
-
-        // Clean up the browser session on this page
         await supabase.auth.signOut();
       } catch (e) {
         msg.textContent = 'Update failed: ' + (e.message || e);
