@@ -46,9 +46,10 @@
   </div>
 
   <script>
-    // MUST match the Supabase project that sent the email
+    // MUST match the Supabase project that sends the emails
     const SUPABASE_URL = 'https://cfxekbvsdvqviyfvpqzo.supabase.co';
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNmeGVrYnZzZHZxdml5ZnZwcXpvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAzMDQ3ODgsImV4cCI6MjA3NTg4MDc4OH0.7cyrfmSAwFVJJL4AigVhu58xolHUtrWyWGKLa07hPz4';
+    const SUPABASE_ANON_KEY =
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNmeGVrYnZzZHZxdml5ZnZwcXpvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAzMDQ3ODgsImV4cCI6MjA3NTg4MDc4OH0.7cyrfmSAwFVJJL4AigVhu58xolHUtrWyWGKLa07hPz4';
 
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
     const debugEl = document.getElementById('debug');
@@ -77,9 +78,8 @@
       const h = parseHash();
       const q = parseQuery();
 
-      // Ignore ?code= on static hosting (needs server code_verifier).
+      // Ignore ?code= on static hosting (needs server PKCE verifier)
       if (q.code || h.code) {
-        // Show a hint if someone visits with ?code= by mistake.
         log('Auth code detected (server PKCE). Using token_hash / implicit instead.');
       }
 
