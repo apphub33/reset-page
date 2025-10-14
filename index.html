@@ -19,6 +19,7 @@
     .err { color:#c00; margin-top:10px }
     .ok { color:#0a7d31; margin-top:10px; font-weight:700 }
     .row { display:flex; gap:10px; margin-top:8px }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size:12px; color:#555 }
   </style>
 </head>
 <body>
@@ -27,6 +28,7 @@
 
     <div id="step-session">
       <p class="muted">Opening secure session…</p>
+      <div id="debug" class="mono" style="margin-top:8px"></div>
     </div>
 
     <div id="step-form" hidden>
@@ -44,12 +46,15 @@
   </div>
 
   <script>
-    // >>> Replace with your values
+    // >>> Your Supabase project (must match the project that sent the email)
     const SUPABASE_URL = 'https://cfxekbvsdvqviyfvpqzo.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNmeGVrYnZzZHZxdml5ZnZwcXpvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAzMDQ3ODgsImV4cCI6MjA3NTg4MDc4OH0.7cyrfmSAwFVJJL4AigVhu58xolHUtrWyWGKLa07hPz4';
     // <<<
 
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const debugEl = document.getElementById('debug');
+
+    const log = (m) => { try { console.log(m); debugEl.textContent = String(m); } catch (_) {} };
 
     function parseHash() {
       const out = {};
@@ -72,7 +77,11 @@
 
     async function openSessionFromUrl() {
       const h = parseHash();
+      const q = parseQuery();
+
+      // 1) Implicit flow (hash tokens)
       if (h.access_token && h.refresh_token) {
+        log('Found access_token in URL hash (implicit). Exchanging…');
         const { error } = await supabase.auth.setSession({
           access_token: h.access_token,
           refresh_token: h.refresh_token
@@ -80,16 +89,24 @@
         if (error) throw error;
         return true;
       }
-      // Handle token_hash flow (most common for recovery):
-      const q = parseQuery();
-      if (q.token_hash && (q.type === 'recovery' || q.type === 'signup' || q.type === 'magiclink')) {
-        const { error } = await supabase.auth.verifyOtp({
-          type: 'recovery',            // correct for password reset
-          token_hash: q.token_hash
-        });
+
+      // 2) Token-hash (PKCE-style) flow
+      const tokenHash = q.token_hash || h.token_hash;
+      const rawType = (q.type || h.type || '').toLowerCase();
+      const allowed = ['recovery','email','magiclink','signup','invite','email_change'];
+
+      if (tokenHash) {
+        const type = allowed.includes(rawType) ? rawType : 'recovery';
+        log(`Found token_hash (${type}). Verifying…`);
+        const { data, error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash });
         if (error) throw error;
+
+        // Make sure we actually have a session
+        const { data: s } = await supabase.auth.getSession();
+        if (!s || !s.session) throw new Error('No session after verifyOtp');
         return true;
       }
+
       return false;
     }
 
@@ -105,7 +122,13 @@
         sessionStep.hidden = true;
         formStep.hidden = false;
       } catch (e) {
-        sessionStep.innerHTML = '<p class="err">Could not open session: ' + (e.message || e) + '</p>';
+        console.error(e);
+        const msg = (e && e.message) ? e.message : String(e);
+        let friendly = 'Could not open session. ';
+        if (/expired/i.test(msg)) friendly += 'The link has expired. Request a new reset email.';
+        else if (/used/i.test(msg)) friendly += 'This link was already used. Request a new one.';
+        else friendly += msg;
+        sessionStep.innerHTML = '<p class="err">' + friendly + '</p>';
       }
     })();
 
@@ -121,10 +144,17 @@
       if (p1.length < 6) { msg.textContent = 'Minimum 6 characters'; msg.hidden = false; return; }
 
       try {
+        // Double-check we still have a session (token-hash sessions can expire if left open too long)
+        const { data: s1 } = await supabase.auth.getSession();
+        if (!s1 || !s1.session) throw new Error('No active session to update password');
+
         const { error } = await supabase.auth.updateUser({ password: p1 });
         if (error) throw error;
+
         okEl.hidden = false;
-        await supabase.auth.signOut(); // don’t leave a session in the browser
+
+        // Clean up the browser session on this page
+        await supabase.auth.signOut();
       } catch (e) {
         msg.textContent = 'Update failed: ' + (e.message || e);
         msg.hidden = false;
