@@ -2,138 +2,119 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Reset password</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BizChat — Reset Password</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
-    :root { --pri:#8b7cf6; --bg:#fff7fb; --err:#c62828; }
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin:0; background:#fff; }
-    .wrap { max-width: 560px; margin: 0 auto; padding: 28px 16px 48px; }
-    h1 { margin: 0 0 14px; font-size: 34px; line-height:1.15; }
-    .msg { color: #555; margin: 6px 0 18px; }
-    .err { color: var(--err); font-weight: 600; margin: 8px 0 16px; white-space: pre-wrap; }
-    .row { display:flex; gap:10px; align-items:center; margin: 10px 0; }
-    input[type=password], input[type=text] {
-      flex:1; padding:14px 12px; font-size:16px; border:1px solid #ddd; border-radius:12px; outline:none;
-    }
-    button {
-      display:inline-block; width:100%; border:0; padding:14px 16px; font-size:16px; border-radius:14px;
-      background:var(--pri); color:#fff; cursor:pointer;
-    }
-    button[disabled] { opacity:.6; cursor:default; }
-    .eye { width:48px; height:48px; border-radius:12px; border:1px solid #ddd; background:#f7f7f7; cursor:pointer; }
-    .subtle { margin-top:12px; display:inline-block; text-decoration:none; color:#333; background:#eee; padding:10px 14px; border-radius:12px; }
-    .hide { display:none; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+           background:#faf5ff; margin:0; display:flex; min-height:100vh; align-items:center; justify-content:center;}
+    .card { background:#fff; border-radius:16px; padding:24px; width:min(520px, 92vw);
+            box-shadow:0 8px 30px rgba(0,0,0,.08); }
+    h1 { margin:0 0 12px; font-size:22px }
+    label { display:block; margin:10px 0 6px; color:#333; font-size:14px }
+    input { width:100%; padding:12px; border:1px solid #ddd; border-radius:10px; font-size:16px }
+    button { margin-top:16px; padding:12px 16px; border-radius:10px; border:none;
+             background:#6d28d9; color:#fff; font-weight:700; }
+    .muted { color:#666; font-size:14px; margin-top:10px }
+    .err { color:#c00; margin-top:10px }
+    .ok { color:#0a7d31; margin-top:10px; font-weight:700 }
+    .row { display:flex; gap:10px }
   </style>
 </head>
 <body>
-  <div class="wrap">
+  <div class="card">
     <h1>Reset password</h1>
-    <div id="status" class="msg">Preparing…</div>
-    <div id="error" class="err hide"></div>
-
-    <div id="form" class="hide">
-      <div class="row">
-        <input id="pw1" type="password" placeholder="New password" autocomplete="new-password" />
-        <button class="eye" type="button" id="t1">👁️</button>
-      </div>
-      <div class="row">
-        <input id="pw2" type="password" placeholder="Confirm password" autocomplete="new-password" />
-        <button class="eye" type="button" id="t2">👁️</button>
-      </div>
-      <button id="submit">Update password</button>
-      <a class="subtle" href="bizchat://setup">Return to App</a>
+    <div id="step-session">
+      <p class="muted">Opening secure session…</p>
     </div>
 
-    <div id="done" class="hide">
-      <div class="msg">Password updated. You can close this tab and return to the app.</div>
-      <a class="subtle" href="bizchat://setup">Return to App</a>
+    <div id="step-form" hidden>
+      <label>New password</label>
+      <input id="pw1" type="password" autocomplete="new-password" />
+      <label>Confirm password</label>
+      <input id="pw2" type="password" autocomplete="new-password" />
+      <button id="btn">Update password</button>
+      <div id="msg" class="err" hidden></div>
+      <div id="ok" class="ok" hidden>Password updated. You can return to the app.</div>
+      <div class="row">
+        <a class="muted" href="bizchat5://auth-callback">Open BizChat</a>
+      </div>
     </div>
   </div>
 
-  <script type="module">
-    import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+  <script>
+    const SUPABASE_URL = 'SUPABASE_URL_HERE';
+    const SUPABASE_ANON_KEY = 'SUPABASE_ANON_KEY_HERE';
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-    // 🔒 Your project (hard-coded as requested)
-    const SB_URL  = 'https://dlecrwuwsnvtykcyvkme.supabase.co';
-    const SB_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRsZWNyd3V3c252dHlrY3l2a21lIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk2MDYxODQsImV4cCI6MjA3NTE4MjE4NH0.sZ-vk_F0-TsjF2Qr76W7drOzf0CQo5qBSHFSj_4BdUw';
-
-    const sb = createClient(SB_URL, SB_ANON, { auth: { persistSession: false } });
-
-    const $ = (id) => document.getElementById(id);
-    const status = $('status'), err = $('error'), form = $('form'), done = $('done');
-    const pw1 = $('pw1'), pw2 = $('pw2'), submit = $('submit');
-
-    // Show/hide helpers
-    const show = (el) => el.classList.remove('hide');
-    const hide = (el) => el.classList.add('hide');
-    const setErr = (m) => { if (m) { err.textContent = m; show(err); } else { err.textContent = ''; hide(err); } };
-    const setStatus = (m) => status.textContent = m || '';
-
-    // Parse helpers
-    const qs = new URLSearchParams(location.search);
-    const hs = new URLSearchParams(location.hash.replace(/^#/, ''));
-
-    const token_hash = qs.get('token_hash');
-    const type = (qs.get('type') || '').toLowerCase();
-    const access_token = hs.get('access_token');
-    const refresh_token = hs.get('refresh_token');
-
-    // Boot: establish an auth session exactly once
-    async function boot() {
-      try {
-        // Case 1: Newer recovery links: ?token_hash=...&type=recovery
-        if (token_hash) {
-          setStatus('Verifying reset link…');
-          const { data, error } = await sb.auth.verifyOtp({ type: 'recovery', token_hash });
-          if (error) throw error;
-          setStatus('Link verified. Enter your new password.');
-          show(form);
-          return;
-        }
-
-        // Case 2: Fragment tokens (older behavior): #access_token=…&refresh_token=…
-        if (access_token && refresh_token) {
-          setStatus('Restoring session…');
-          const { error } = await sb.auth.setSession({ access_token, refresh_token });
-          if (error) throw error;
-          setStatus('Session ready. Enter your new password.');
-          show(form);
-          return;
-        }
-
-        // No usable tokens → show guidance
-        setErr('Could not initialize recovery session. Open the link directly from the email again.');
-        setStatus('');
-      } catch (e) {
-        setErr(e?.message || String(e));
-        setStatus('');
-      }
+    function parseHash() {
+      const h = window.location.hash || '';
+      const out = {};
+      h.replace(/^#/, '').split('&').forEach(kv => {
+        const [k, v] = kv.split('=');
+        if (!k) return;
+        out[decodeURIComponent(k)] = decodeURIComponent(v || '');
+      });
+      return out;
     }
 
-    // Toggle eyes
-    $('t1').onclick = () => pw1.type = (pw1.type === 'password' ? 'text' : 'password');
-    $('t2').onclick = () => pw2.type = (pw2.type === 'password' ? 'text' : 'password');
-
-    // Update password
-    submit.onclick = async () => {
-      setErr('');
-      const a = pw1.value.trim(), b = pw2.value.trim();
-      if (a.length < 6) { setErr('Password must be at least 6 characters.'); return; }
-      if (a !== b) { setErr('Passwords do not match.'); return; }
-      submit.disabled = true; setStatus('Updating…');
-      try {
-        const { error } = await sb.auth.updateUser({ password: a });
+    async function setWebSessionFromHash() {
+      const p = parseHash();
+      if (p.access_token && p.refresh_token) {
+        const { error } = await supabase.auth.setSession({
+          access_token: p.access_token,
+          refresh_token: p.refresh_token
+        });
         if (error) throw error;
-        hide(form); setStatus(''); show(done);
-      } catch (e) {
-        setErr(e?.message || String(e));
-      } finally {
-        submit.disabled = false; setStatus('');
+        return true;
       }
-    };
+      // Some emails use token_hash + type=recovery; try to recover automatically
+      if (p.token_hash && (p.type === 'recovery' || p.type === 'signup')) {
+        // Not strictly needed for password reset, but we leave this for completeness.
+        // If you see this path often, we can switch to verifyOtp here.
+      }
+      return false;
+    }
 
-    boot();
+    (async () => {
+      const sessionStep = document.getElementById('step-session');
+      const formStep = document.getElementById('step-form');
+      const msg = document.getElementById('msg');
+      try {
+        const ok = await setWebSessionFromHash();
+        if (!ok) {
+          sessionStep.innerHTML = '<p class="err">Open this page from the reset email link.</p>';
+          return;
+        }
+        sessionStep.hidden = true;
+        formStep.hidden = false;
+      } catch (e) {
+        sessionStep.innerHTML = '<p class="err">Could not open session: ' + (e.message || e) + '</p>';
+      }
+    })();
+
+    document.getElementById('btn').addEventListener('click', async () => {
+      const p1 = document.getElementById('pw1').value;
+      const p2 = document.getElementById('pw2').value;
+      const msg = document.getElementById('msg');
+      const okEl = document.getElementById('ok');
+      msg.hidden = true; okEl.hidden = true;
+
+      if (!p1 || !p2) { msg.textContent = 'Enter both fields'; msg.hidden = false; return; }
+      if (p1 !== p2) { msg.textContent = 'Passwords do not match'; msg.hidden = false; return; }
+      if (p1.length < 6) { msg.textContent = 'Minimum 6 characters'; msg.hidden = false; return; }
+
+      try {
+        const { error } = await supabase.auth.updateUser({ password: p1 });
+        if (error) throw error;
+        okEl.hidden = false;
+        // For safety, sign out the web session so tokens aren’t left in the browser
+        await supabase.auth.signOut();
+      } catch (e) {
+        msg.textContent = 'Update failed: ' + (e.message || e);
+        msg.hidden = false;
+      }
+    });
   </script>
 </body>
 </html>
-
