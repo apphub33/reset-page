@@ -14,16 +14,17 @@
     label { display:block; margin:10px 0 6px; color:#333; font-size:14px }
     input { width:100%; padding:12px; border:1px solid #ddd; border-radius:10px; font-size:16px }
     button { margin-top:16px; padding:12px 16px; border-radius:10px; border:none;
-             background:#6d28d9; color:#fff; font-weight:700; }
+             background:#6d28d9; color:#fff; font-weight:700; cursor:pointer }
     .muted { color:#666; font-size:14px; margin-top:10px }
     .err { color:#c00; margin-top:10px }
     .ok { color:#0a7d31; margin-top:10px; font-weight:700 }
-    .row { display:flex; gap:10px }
+    .row { display:flex; gap:10px; margin-top:8px }
   </style>
 </head>
 <body>
   <div class="card">
     <h1>Reset password</h1>
+
     <div id="step-session">
       <p class="muted">Opening secure session…</p>
     </div>
@@ -43,35 +44,51 @@
   </div>
 
   <script>
+    // >>> Replace with your values
     const SUPABASE_URL = 'https://cfxekbvsdvqviyfvpqzo.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNmeGVrYnZzZHZxdml5ZnZwcXpvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAzMDQ3ODgsImV4cCI6MjA3NTg4MDc4OH0.7cyrfmSAwFVJJL4AigVhu58xolHUtrWyWGKLa07hPz4';
+    // <<<
+
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     function parseHash() {
-      const h = window.location.hash || '';
       const out = {};
-      h.replace(/^#/, '').split('&').forEach(kv => {
+      (location.hash || '').replace(/^#/, '').split('&').forEach(kv => {
+        if (!kv) return;
         const [k, v] = kv.split('=');
-        if (!k) return;
+        out[decodeURIComponent(k)] = decodeURIComponent(v || '');
+      });
+      return out;
+    }
+    function parseQuery() {
+      const out = {};
+      (location.search || '').replace(/^\?/, '').split('&').forEach(kv => {
+        if (!kv) return;
+        const [k, v] = kv.split('=');
         out[decodeURIComponent(k)] = decodeURIComponent(v || '');
       });
       return out;
     }
 
-    async function setWebSessionFromHash() {
-      const p = parseHash();
-      if (p.access_token && p.refresh_token) {
+    async function openSessionFromUrl() {
+      const h = parseHash();
+      if (h.access_token && h.refresh_token) {
         const { error } = await supabase.auth.setSession({
-          access_token: p.access_token,
-          refresh_token: p.refresh_token
+          access_token: h.access_token,
+          refresh_token: h.refresh_token
         });
         if (error) throw error;
         return true;
       }
-      // Some emails use token_hash + type=recovery; try to recover automatically
-      if (p.token_hash && (p.type === 'recovery' || p.type === 'signup')) {
-        // Not strictly needed for password reset, but we leave this for completeness.
-        // If you see this path often, we can switch to verifyOtp here.
+      // Handle token_hash flow (most common for recovery):
+      const q = parseQuery();
+      if (q.token_hash && (q.type === 'recovery' || q.type === 'signup' || q.type === 'magiclink')) {
+        const { error } = await supabase.auth.verifyOtp({
+          type: 'recovery',            // correct for password reset
+          token_hash: q.token_hash
+        });
+        if (error) throw error;
+        return true;
       }
       return false;
     }
@@ -79,9 +96,8 @@
     (async () => {
       const sessionStep = document.getElementById('step-session');
       const formStep = document.getElementById('step-form');
-      const msg = document.getElementById('msg');
       try {
-        const ok = await setWebSessionFromHash();
+        const ok = await openSessionFromUrl();
         if (!ok) {
           sessionStep.innerHTML = '<p class="err">Open this page from the reset email link.</p>';
           return;
@@ -108,8 +124,7 @@
         const { error } = await supabase.auth.updateUser({ password: p1 });
         if (error) throw error;
         okEl.hidden = false;
-        // For safety, sign out the web session so tokens aren’t left in the browser
-        await supabase.auth.signOut();
+        await supabase.auth.signOut(); // don’t leave a session in the browser
       } catch (e) {
         msg.textContent = 'Update failed: ' + (e.message || e);
         msg.hidden = false;
