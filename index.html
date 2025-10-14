@@ -78,11 +78,12 @@
       const h = parseHash();
       const q = parseQuery();
 
-      // 1) NEW: PKCE-style "code" redirect (your current link format)
+      // 1) PKCE-style authorization code (this is what your link shows)
       const code = q.code || h.code;
       if (code) {
         log('Found code param. Exchanging for a session…');
-        const { error } = await supabase.auth.exchangeCodeForSession({ code });
+        // IMPORTANT: pass a STRING, not an object
+        const { error } = await supabase.auth.exchangeCodeForSession(code);
         if (error) throw error;
         return true;
       }
@@ -144,7 +145,7 @@
       const p2 = document.getElementById('pw2').value;
       const msg = document.getElementById('msg');
       const okEl = document.getElementById('ok');
-      msg.hidden = true; okEl.hidden = false; okEl.hidden = true;
+      msg.hidden = true; okEl.hidden = true;
 
       if (!p1 || !p2) { msg.textContent = 'Enter both fields'; msg.hidden = false; return; }
       if (p1 !== p2) { msg.textContent = 'Passwords do not match'; msg.hidden = false; return; }
